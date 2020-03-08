@@ -80,81 +80,97 @@ void RealSenseNodeFactory::getDevice(rs2::device_list list)
 		else
 		{
 			bool found = false;
-      		ROS_INFO_STREAM(" ");
-			for (auto&& dev : list)
+			for (auto i = 0; i < list.size(); ++i)
 			{
-				auto sn = dev.get_info(RS2_CAMERA_INFO_SERIAL_NUMBER);
-				ROS_INFO_STREAM("Device with serial number " << sn << " was found."<<std::endl);
-				std::string pn = dev.get_info(RS2_CAMERA_INFO_PHYSICAL_PORT);
-				std::string name = dev.get_info(RS2_CAMERA_INFO_NAME);
-				ROS_INFO_STREAM("Device with physical ID " << pn << " was found.");
-				std::vector<std::string> results;
-				ROS_INFO_STREAM("Device with name " << name << " was found.");
-				std::string port_id = parse_usb_port(pn);
-				if (port_id.empty())
+				try
 				{
-					std::stringstream msg;
-					msg << "Error extracting usb port from device with physical ID: " << pn << std::endl << "Please report on github issue at https://github.com/IntelRealSense/realsense-ros";
-					if (_usb_port_id.empty())
+					rs2::device dev = list[i];
+					const char* sn = nullptr;
+					try
 					{
-						ROS_WARN_STREAM(msg.str());
+						sn = dev.get_info(RS2_CAMERA_INFO_SERIAL_NUMBER);
+					}
+					catch (std::exception &exc)
+					{
+						ROS_WARN_STREAM("Failed to get serial number: " << exc.what());
+						continue;
+					}
+					ROS_INFO_STREAM("Device with serial number " << sn << " was found."<<std::endl);
+					std::string pn = dev.get_info(RS2_CAMERA_INFO_PHYSICAL_PORT);
+					std::string name = dev.get_info(RS2_CAMERA_INFO_NAME);
+					ROS_INFO_STREAM("Device with physical ID " << pn << " was found.");
+					std::vector<std::string> results;
+					ROS_INFO_STREAM("Device with name " << name << " was found.");
+					std::string port_id = parse_usb_port(pn);
+					if (port_id.empty())
+					{
+						std::stringstream msg;
+						msg << "Error extracting usb port from device with physical ID: " << pn << std::endl << "Please report on github issue at https://github.com/IntelRealSense/realsense-ros";
+							if (_usb_port_id.empty())
+							{
+								ROS_WARN_STREAM(msg.str());
+							}
+							else
+							{
+								ROS_ERROR_STREAM(msg.str());
+								ROS_ERROR_STREAM("Please use serial number instead of usb port.");
+							}
 					}
 					else
 					{
-						ROS_ERROR_STREAM(msg.str());
-						ROS_ERROR_STREAM("Please use serial number instead of usb port.");
+						ROS_INFO_STREAM("Device with port number " << port_id << " was found.");					
+					}
+					bool found_device_type(true);
+					if (!_device_type.empty())
+					{
+						std::smatch match_results;
+						std::regex device_type_regex(_device_type.c_str(), std::regex::icase);
+						found_device_type = std::regex_search(name, match_results, device_type_regex);
+					}
+
+					if ((_serial_no.empty() || sn == _serial_no) && (_usb_port_id.empty() || port_id == _usb_port_id) && found_device_type)
+					{
+						_device = dev;
+						_serial_no = sn;
+						found = true;
+						break;
 					}
 				}
-				else
+				catch (rs2::error &exc)
 				{
-					ROS_INFO_STREAM("Device with port number " << port_id << " was found.");					
-				}
-				bool found_device_type(true);
-				if (!_device_type.empty())
-				{
-					std::smatch match_results;
-					std::regex device_type_regex(_device_type.c_str(), std::regex::icase);
-					found_device_type = std::regex_search(name, match_results, device_type_regex);
-				}
-
-				if ((_serial_no.empty() || sn == _serial_no) && (_usb_port_id.empty() || port_id == _usb_port_id) && found_device_type)
-				{
-					_device = dev;
-					_serial_no = sn;
-					found = true;
-					break;
+					ROS_WARN_STREAM("Failed to get device: " << exc.what());
 				}
 			}
 			if (!found)
-			{
-				// T265 could be caught by another node.
-				std::string msg ("The requested device with ");
-				bool add_and(false);
-				if (!_serial_no.empty())
 				{
-					msg += "serial number " + _serial_no;
-					add_and = true;
+					// T265 could be caught by another node.
+					std::string msg ("The requested device with ");
+					bool add_and(false);
+					if (!_serial_no.empty())
+						{
+							msg += "serial number " + _serial_no;
+							add_and = true;
+						}
+					if (!_usb_port_id.empty())
+						{
+							if (add_and)
+								{
+									msg += " and ";
+								}
+							msg += "usb port id " + _usb_port_id;
+							add_and = true;
+						}
+					if (!_device_type.empty())
+						{
+							if (add_and)
+								{
+									msg += " and ";
+								}
+							msg += "device name containing " + _device_type;
+						}
+					msg += " is NOT found. Will Try again.";
+					ROS_ERROR_STREAM(msg);
 				}
-				if (!_usb_port_id.empty())
-				{
-					if (add_and)
-					{
-						msg += " and ";
-					}
-					msg += "usb port id " + _usb_port_id;
-					add_and = true;
-				}
-				if (!_device_type.empty())
-				{
-					if (add_and)
-					{
-						msg += " and ";
-					}
-					msg += "device name containing " + _device_type;
-				}
-				msg += " is NOT found. Will Try again.";
-				ROS_ERROR_STREAM(msg);
-			}
 		}
 	}
 
